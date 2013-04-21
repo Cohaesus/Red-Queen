@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 import freenect
 import cv
+import random
+import time
 
 
 def video_to_bgr(video):
@@ -10,16 +12,23 @@ def video_to_bgr(video):
     return image
 
 
-def show_depth():
-    depth = freenect.sync_get_depth()[0]
+def show_depth(dev, data, timestamp):
+    global keep_running
+
+    depth = data
     image = cv.CreateImageHeader((depth.shape[1], depth.shape[0]), cv.IPL_DEPTH_8U, 1)
     cv.SetData(image, depth.tostring(), depth.dtype.itemsize * depth.shape[1])
 
-    return image
+    cv.ShowImage('Depth', image)
+    if cv.WaitKey(10) == 27:
+        keep_running = False
 
 
-def show_faces():
-    image = video_to_bgr(freenect.sync_get_video()[0])
+def show_faces(dev, data, timestamp):
+    global keep_running
+    global last_time
+    global has_face
+    image = video_to_bgr(data)
     min_size = (20, 20)
     image_scale = 2
     haar_scale = 1.2
@@ -43,6 +52,7 @@ def show_faces():
     )
 
     if faces:
+        has_face = True
         for ((x, y, w, h), n) in faces:
             pt1 = (int(x * image_scale), int(y * image_scale))
             pt2 = (int((x + w) * image_scale), int((y + h) * image_scale))
@@ -70,23 +80,45 @@ def show_faces():
                     8,
                     0
                 )
+    else:
+        if time.time() - last_time > 3:
+            last_time = time.time()
+            has_face = False
 
     cv.ResetImageROI(image)
 
-    return image
+    cv.ShowImage('Faces', image)
+
+    if cv.WaitKey(10) == 27:
+        keep_running = False
+
+
+def body(dev, ctx):
+    global last_time
+
+    if time.time() - last_time > 3 and not has_face:
+        last_time = time.time()
+        print 'NO FACE FOUND - Randomly tilting to see if I can find one..'
+        led = random.randint(0, 6)
+        freenect.set_led(dev, led)
+        tilt = random.randint(0, 30)
+        freenect.set_tilt_degs(dev, tilt)
+
+    if not keep_running:
+        raise freenect.Kill
 
 if __name__ == "__main__":
-
+    keep_running = True
+    last_time = 0
+    has_face = False
     # Build named Windows
     cv.NamedWindow('Depth')
     cv.NamedWindow('Faces')
     # Load Haar Cascades
-    face_cascade = cv.Load('frontalface.xml')
-    eye_cascade = cv.Load('eyes.xml')
+    face_cascade = cv.Load('haar/frontalface.xml')
+    eye_cascade = cv.Load('haar/eyes.xml')
 
-    while True:
-        cv.ShowImage('Depth', show_depth())
-        cv.ShowImage('Faces', show_faces())
-
-        if cv.WaitKey(10) == 27:
-            break
+    print('Press ESC in window to stop')
+    freenect.runloop(depth=show_depth,
+                     video=show_faces,
+                     body=body)

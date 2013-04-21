@@ -12,23 +12,12 @@ def video_to_bgr(video):
     return image
 
 
-def show_depth(dev, data, timestamp):
-    global keep_running
-
-    depth = data
-    image = cv.CreateImageHeader((depth.shape[1], depth.shape[0]), cv.IPL_DEPTH_8U, 1)
-    cv.SetData(image, depth.tostring(), depth.dtype.itemsize * depth.shape[1])
-
-    cv.ShowImage('Depth', image)
-    if cv.WaitKey(10) == 27:
-        keep_running = False
-
-
-def show_faces(dev, data, timestamp):
+def find_faces(dev, data, timestamp):
     global keep_running
     global last_time
     global has_face
     image = video_to_bgr(data)
+    image2 = image
     min_size = (20, 20)
     image_scale = 2
     haar_scale = 1.2
@@ -57,6 +46,9 @@ def show_faces(dev, data, timestamp):
             pt1 = (int(x * image_scale), int(y * image_scale))
             pt2 = (int((x + w) * image_scale), int((y + h) * image_scale))
             cv.Rectangle(image, pt1, pt2, cv.RGB(255, 0, 0), 3, 8, 0)
+            cv.SetImageROI(image, (pt1[0], pt1[1], pt2[0] - pt1[0], pt2[1] - pt1[1]))
+            cv.Copy(image, image2)
+            cv.SaveImage('faces/face-%s.png' % n, image2)
             cv.SetImageROI(image, (pt1[0], pt1[1], pt2[0] - pt1[0], int((pt2[1] - pt1[1]) * 0.7)))
 
         eyes = cv.HaarDetectObjects(
@@ -112,13 +104,13 @@ if __name__ == "__main__":
     last_time = 0
     has_face = False
     # Build named Windows
-    cv.NamedWindow('Depth')
     cv.NamedWindow('Faces')
     # Load Haar Cascades
-    face_cascade = cv.Load('frontalface.xml')
-    eye_cascade = cv.Load('eyes.xml')
+    face_cascade = cv.Load('haar/frontalface.xml')
+    eye_cascade = cv.Load('haar/eyes.xml')
 
     print('Press ESC in window to stop')
-    freenect.runloop(depth=show_depth,
-                     video=show_faces,
-                     body=body)
+    freenect.runloop(
+        video=find_faces,
+        body=body
+    )
